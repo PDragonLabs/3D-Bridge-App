@@ -5,7 +5,7 @@ single and multi social app
 ![image](./3D-Bridge-Game-(Offline).png)
 
 
-in progress
+in progress ... this is the boiler/lunch room ... check out the menu TBA
 7/25.25
 
 Phase 1: Core Multiplayer & User Foundation (Firebase)
