@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Bridge Game (Offline)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+        }
+        #scene-container {
+            flex-grow: 1;
+            height: 100%;
+            position: relative;
+            transition: width 0.5s ease-in-out;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        canvas.grabbing {
+            cursor: grabbing;
+        }
+        #ui-container {
+            width: 350px;
+            flex-shrink: 0;
+            background-color: #2d3748;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+            overflow-y: auto;
+            transition: margin-right 0.5s ease-in-out;
+            position: relative;
+        }
+        #ui-container.hidden {
+            margin-right: -350px;
+        }
+        #toggle-ui-btn {
+            position: absolute;
+            left: -30px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #2d3748;
+            color: white;
+            border: none;
+            width: 30px;
+            height: 60px;
+            cursor: pointer;
+            border-radius: 8px 0 0 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .player-info {
+            position: absolute;
+            background-color: rgba(45, 55, 72, 0.8);
+            padding: 8px 12px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+            transition: background-color 0.2s;
+        }
+        #north-player { top: 20px; left: 50%; transform: translateX(-50%); }
+        #south-player { bottom: 20px; left: 50%; transform: translateX(-50%); }
+        #east-player { top: 50%; right: 20px; transform: translateY(-50%); }
+        #west-player { top: 50%; left: 20px; transform: translateY(-50%); }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            padding: 1rem;
+        }
+        .modal-content {
+            background-color: #2d3748;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            text-align: left;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        #card-tooltip {
+            position: absolute;
+            display: none;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            pointer-events: none; /* So it doesn't interfere with mouse events */
+            z-index: 101;
+        }
+        .disabled-btn {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .btn-animated {
+            transition: transform 0.1s ease-in-out;
+        }
+        .btn-animated:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="scene-container">
+            <div id="card-tooltip"></div>
+            <!-- Player Name Tags -->
+            <div id="north-player" class="player-info">North</div>
+            <div id="south-player" class="player-info">South (You)</div>
+            <div id="east-player" class="player-info">East</div>
+            <div id="west-player" class="player-info">West</div>
+        </div>
+        <div id="ui-container">
+            <button id="toggle-ui-btn" class="btn-animated">&lt;</button>
+            <div>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Bridge Game</h2>
+                    <div class="flex gap-2">
+                        <button id="controls-btn" class="text-sm bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded btn-animated">Controls</button>
+                        <button id="rules-btn" class="text-sm bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded btn-animated">Rules</button>
+                    </div>
+                </div>
+                <div id="game-status" class="mb-4 p-3 bg-gray-800 rounded text-center">
+                    <p id="status-text" class="font-semibold text-lg">Choose a Game Mode</p>
+                    <p id="contract-text" class="text-sm"></p>
+                </div>
+                <div id="score-display" class="hidden mb-4 p-3 bg-gray-900 rounded">
+                    <h4 class="font-bold text-center mb-2">Tricks Won</h4>
+                    <div class="flex justify-around text-center">
+                        <div><p class="text-sm text-gray-400">You / North</p><p id="north-south-score" class="text-2xl font-bold">0</p></div>
+                        <div><p class="text-sm text-gray-400">West / East</p><p id="east-west-score" class="text-2xl font-bold">0</p></div>
+                    </div>
+                </div>
+                <div id="hand-controls" class="hidden">
+                    <button id="sort-btn" class="w-full p-2 bg-indigo-600 hover:bg-indigo-700 rounded mb-2 btn-animated">Auto Sort Hand</button>
+                    <div class="flex gap-2 mb-2">
+                        <button id="zoom-in-btn" class="w-full p-2 bg-gray-600 hover:bg-gray-700 rounded btn-animated">Zoom In</button>
+                        <button id="zoom-out-btn" class="w-full p-2 bg-gray-600 hover:bg-gray-700 rounded btn-animated">Zoom Out</button>
+                    </div>
+                    <div class="flex gap-2 mb-2">
+                        <button id="claim-btn" class="w-full p-2 bg-yellow-600 hover:bg-yellow-700 text-black rounded btn-animated disabled-btn" disabled>Claim</button>
+                        <button id="concede-btn" class="w-full p-2 bg-red-600 hover:bg-red-700 rounded btn-animated disabled-btn" disabled>Concede</button>
+                    </div>
+                    <button id="next-round-btn" class="w-full p-2 bg-green-600 hover:bg-green-700 rounded hidden btn-animated">Start Next Round</button>
+                    <button id="new-game-btn" class="w-full p-2 bg-gray-700 hover:bg-gray-800 rounded mt-4 btn-animated">New Game</button>
+                </div>
+
+                <div id="bidding-panel" class="hidden mt-4">
+                     <h3 class="font-bold text-center mb-2">Bidding</h3>
+                     <div class="grid grid-cols-5 gap-1 mb-2">
+                        <button data-bid-level="1" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">1</button>
+                        <button data-bid-level="2" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">2</button>
+                        <button data-bid-level="3" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">3</button>
+                        <button data-bid-level="4" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">4</button>
+                        <button data-bid-level="5" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">5</button>
+                        <button data-bid-level="6" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">6</button>
+                        <button data-bid-level="7" class="bid-btn p-1 bg-blue-600 hover:bg-blue-700 rounded btn-animated">7</button>
+                     </div>
+                     <div class="grid grid-cols-5 gap-1 mb-2">
+                        <button data-bid-suit="C" class="bid-btn p-1 bg-gray-600 hover:bg-gray-700 rounded btn-animated">♣</button>
+                        <button data-bid-suit="D" class="bid-btn p-1 bg-orange-600 hover:bg-orange-700 rounded btn-animated">♦</button>
+                        <button data-bid-suit="H" class="bid-btn p-1 bg-red-600 hover:bg-red-700 rounded btn-animated">♥</button>
+                        <button data-bid-suit="S" class="bid-btn p-1 bg-black hover:bg-gray-900 rounded btn-animated">♠</button>
+                        <button data-bid-suit="NT" class="bid-btn p-1 bg-purple-600 hover:bg-purple-700 rounded btn-animated">NT</button>
+                     </div>
+                     <button id="submit-bid-btn" class="w-full p-2 bg-green-600 hover:bg-green-700 rounded mb-2 btn-animated">Place Bid</button>
+                     <button id="pass-btn" class="w-full p-2 bg-yellow-600 hover:bg-yellow-700 text-black rounded btn-animated">Pass</button>
+                </div>
+                
+                <div id="last-bids" class="mt-4">
+                    <h4 class="font-bold text-center">Bidding History</h4>
+                    <ul id="bids-list" class="h-24 overflow-y-auto bg-gray-800 p-2 rounded"></ul>
+                </div>
+                <div id="last-trick-display" class="hidden mt-4">
+                    <h4 class="font-bold text-center">Last Trick</h4>
+                    <div id="last-trick-cards" class="flex justify-center gap-2 p-2 bg-gray-800 rounded"></div>
+                </div>
+            </div>
+
+            <div id="chat-box">
+                <h3 class="font-bold mb-2 text-center">Chat (Disabled)</h3>
+                <div id="chat-messages" class="h-32 overflow-y-auto bg-gray-900 p-2 rounded mb-2 opacity-50"></div>
+                <div class="flex">
+                    <input type="text" id="chat-input" class="flex-grow bg-gray-700 rounded-l p-2 focus:outline-none" placeholder="Chat disabled" disabled>
+                    <button id="send-chat-btn" class="bg-blue-600 rounded-r px-4 disabled-btn btn-animated" disabled>Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="game-modal" class="modal"><div class="modal-content text-center"><h2 class="text-2xl font-bold mb-4">Welcome to 3D Bridge</h2><p class="mb-6">Choose a game mode to start.</p><button id="single-player-btn" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded mb-4 btn-animated">Single Player (vs Bots)</button><button id="multiplayer-btn" class="w-full p-3 bg-teal-600 hover:bg-teal-700 rounded mb-4 disabled-btn btn-animated" disabled>Multiplayer (Disabled)</button><p class="text-xs text-gray-400">Multiplayer requires server connection.</p></div></div>
+    <div id="controls-modal" class="modal hidden"><div class="modal-content"><h2 class="text-2xl font-bold mb-4 text-center">How to Play</h2><h3 class="text-lg font-bold mb-2 text-teal-300">Mouse Controls</h3><ul class="list-disc list-inside mb-4 ml-4"><li><strong>View Cards:</strong> Your cards are displayed at the bottom of the screen.</li><li><strong>Play a Card:</strong> Click on a card in your hand to play it to the table.</li><li><strong>Sort Cards:</strong> Click and drag a card to a new position in your hand to sort it manually.</li><li><strong>Auto-Sort:</strong> Use the "Auto Sort Hand" button in the right panel.</li><li><strong>Zoom:</strong> Use the "Zoom In" and "Zoom Out" buttons to adjust your view.</li></ul><h3 class="text-lg font-bold mb-2 text-teal-300">Game Flow</h3><ul class="list-disc list-inside mb-4 ml-4"><li>The game starts with bidding. Once three players pass in a row, the bidding ends.</li><li>The "Play" phase begins. You will lead the first card of every trick.</li><li>Click a card to play it. The bots will play automatically.</li></ul><button id="close-controls-btn" class="w-full mt-6 p-2 bg-red-600 hover:bg-red-700 rounded btn-animated">Close</button></div></div>
+    <div id="rules-modal" class="modal hidden"><div class="modal-content"><h2 class="text-2xl font-bold mb-4 text-center">Bridge Rules</h2><h3 class="text-lg font-bold mb-2 text-teal-300">Objective</h3><p class="mb-4">Bridge is a trick-taking card game played by four players in two competing partnerships. The goal is to score points by winning "tricks."</p><h3 class="text-lg font-bold mb-2 text-teal-300">1. The Deal</h3><p class="mb-4">A standard 52-card deck is dealt, with each player receiving 13 cards.</p><h3 class="text-lg font-bold mb-2 text-teal-300">2. The Bidding (or Auction)</h3><p class="mb-2">Players bid to determine the "contract." The contract is a declaration that they will win a certain number of tricks (more than 6) with a specific suit as "trumps" (or with no trumps).</p><ul class="list-disc list-inside mb-4 ml-4"><li>A bid consists of a number (1-7) and a suit (♣, ♦, ♥, ♠) or No Trump (NT).</li><li>The number represents the tricks to be won *in addition to* 6. So a bid of "1♥" is a contract to win at least 7 tricks with Hearts as trumps.</li><li>Each bid must be higher than the previous one. Suit ranking is: ♣ (lowest), ♦, ♥, ♠, NT (highest).</li><li>The bidding ends when three players in a row pass.</li></ul><h3 class="text-lg font-bold mb-2 text-teal-300">3. The Play</h3><p class="mb-2">The partnership that won the bidding becomes the "declarer."</p><ul class="list-disc list-inside mb-4 ml-4"><li>The player to the declarer's left plays the first card (the "lead").</li><li>Players must follow suit if they can. If not, they can play any card.</li><li>The highest card of the suit led wins the trick, unless a trump is played, in which case the highest trump card wins.</li><li>The winner of a trick leads the next trick.</li></ul><button id="close-rules-btn" class="w-full mt-6 p-2 bg-red-600 hover:bg-red-700 rounded btn-animated">Close</button></div></div>
+
+    <script type="module">
+        // --- Game State Variables ---
+        let localPlayerPosition = 'south';
+        let currentBid = { level: null, suit: null };
+        let gameData = {}; // This will hold the entire game state locally
+
+        // --- 3D Scene Variables ---
+        let scene, camera, renderer, cardBackMaterial;
+        const cardObjects = {}; // Stores Three.js card objects { 'AS': mesh, ... }
+        const trickPilePositions = {
+            south: new THREE.Vector3(0, 0.2, 2.2),
+            west: new THREE.Vector3(-3, 0.2, 0),
+            north: new THREE.Vector3(0, 0.2, -2.2),
+            east: new THREE.Vector3(3, 0.2, 0)
+        };
+        const wonTrickPiles = {
+            'north-south': [],
+            'east-west': []
+        };
+        const raycaster = new THREE.Raycaster();
+        let selectedObject = null, isDragging = false, dragStartTime = 0, hoveredObject = null;
+
+        // --- UI Elements ---
+        const gameModal = document.getElementById('game-modal');
+        const singlePlayerBtn = document.getElementById('single-player-btn');
+        const statusText = document.getElementById('status-text');
+        const biddingPanel = document.getElementById('bidding-panel');
+        const bidsList = document.getElementById('bids-list');
+        const handControls = document.getElementById('hand-controls');
+        const scoreDisplay = document.getElementById('score-display');
+        const northSouthScore = document.getElementById('north-south-score');
+        const eastWestScore = document.getElementById('east-west-score');
+        const lastTrickDisplay = document.getElementById('last-trick-display');
+        const lastTrickCards = document.getElementById('last-trick-cards');
+        const sortBtn = document.getElementById('sort-btn');
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        const nextRoundBtn = document.getElementById('next-round-btn');
+        const newGameBtn = document.getElementById('new-game-btn');
+        const rulesBtn = document.getElementById('rules-btn');
+        const rulesModal = document.getElementById('rules-modal');
+        const closeRulesBtn = document.getElementById('close-rules-btn');
+        const controlsBtn = document.getElementById('controls-btn');
+        const controlsModal = document.getElementById('controls-modal');
+        const closeControlsBtn = document.getElementById('close-controls-btn');
+        const sceneContainer = document.getElementById('scene-container');
+        const uiContainer = document.getElementById('ui-container');
+        const toggleUiBtn = document.getElementById('toggle-ui-btn');
+        const cardTooltip = document.getElementById('card-tooltip');
+
+        // --- Main Execution ---
+        window.onload = () => {
+            init3DScene();
+            setupUIListeners();
+            animate();
+        };
+
+        // --- 3D Scene Setup ---
+        function init3DScene() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a202c);
+            camera = new THREE.PerspectiveCamera(75, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.1, 1000);
+            camera.position.set(0, 9, 10);
+            camera.lookAt(0, 0, 0);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(sceneContainer.clientWidth, sceneContainer.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            sceneContainer.appendChild(renderer.domElement);
+            const ambientLight = new THREE.AmbientLight(0xcccccc, 0.6);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 7.5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            const tableGeometry = new THREE.BoxGeometry(12, 0.2, 8);
+            const tableMaterial = new THREE.MeshStandardMaterial({ color: 0x006400 });
+            const table = new THREE.Mesh(tableGeometry, tableMaterial);
+            table.receiveShadow = true;
+            table.position.y = -0.1;
+            scene.add(table);
+            
+            const backCanvas = document.createElement('canvas');
+            backCanvas.width = 150; backCanvas.height = 210;
+            const backCtx = backCanvas.getContext('2d');
+            backCtx.fillStyle = '#1e3a8a'; backCtx.fillRect(0,0,150,210);
+            backCtx.strokeStyle = '#60a5fa'; backCtx.lineWidth = 10; backCtx.strokeRect(5,5,140,200);
+            const cardBackTexture = new THREE.CanvasTexture(backCanvas);
+            cardBackMaterial = new THREE.MeshStandardMaterial({ map: cardBackTexture, side: THREE.DoubleSide });
+
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onWindowResize() {
+            camera.aspect = sceneContainer.clientWidth / sceneContainer.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(sceneContainer.clientWidth, sceneContainer.clientHeight);
+        }
+
+        // --- Game Setup & Management ---
+        async function createSinglePlayerGame() {
+            await clearBoardAnimation();
+
+            for (const cardId in cardObjects) {
+                scene.remove(cardObjects[cardId].mesh);
+                delete cardObjects[cardId];
+            }
+            wonTrickPiles['north-south'] = [];
+            wonTrickPiles['east-west'] = [];
+
+            const players = [
+                { id: 'player-south', position: 'south', isBot: false },
+                { id: 'bot-west', position: 'west', isBot: true },
+                { id: 'bot-north', position: 'north', isBot: true },
+                { id: 'bot-east', position: 'east', isBot: true },
+            ];
+            const suits = ['S', 'H', 'D', 'C'];
+            const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+            let deck = [];
+            for (const suit of suits) { for (const rank of ranks) { deck.push({ rank, suit }); } }
+            deck.sort(() => Math.random() - 0.5);
+            const hands = { south: [], west: [], north: [], east: [] };
+            const positions = ['south', 'west', 'north', 'east'];
+            for (let i = 0; i < 52; i++) { hands[positions[i % 4]].push(deck[i]); }
+            gameData = {
+                players, hands, gameState: 'bidding', bids: [], contract: null, declarer: null,
+                currentTurn: 'south', trick: [], lastTrick: [], tricksWon: { 'north-south': 0, 'east-west': 0 },
+            };
+            gameModal.style.display = 'none';
+            handControls.classList.remove('hidden');
+            scoreDisplay.classList.remove('hidden');
+            biddingPanel.classList.remove('hidden');
+            nextRoundBtn.classList.add('hidden');
+            lastTrickDisplay.classList.add('hidden');
+            updateUI();
+            update3DScene(false); // Deal without animation first
+            dealAnimation(); // Then animate the deal
+        }
+        
+        function dealAnimation() {
+            const allPositions = ['south', 'west', 'north', 'east'];
+            allPositions.forEach(position => {
+                const hand = gameData.hands[position];
+                hand.forEach((cardData, i) => {
+                    const cardId = `${position}-${cardData.rank}${cardData.suit}`;
+                    const cardMesh = cardObjects[cardId]?.mesh;
+                    if (cardMesh) {
+                        const { pos, rot } = getCardTransform(position, i, hand.length);
+                        cardMesh.position.set(0, 0.2, 0); // Start from center
+                        gsap.to(cardMesh.position, { duration: 0.5, delay: i * 0.05, ...pos });
+                        gsap.to(cardMesh.rotation, { duration: 0.5, delay: i * 0.05, ...rot });
+                    }
+                });
+            });
+        }
+        
+        function clearBoardAnimation() {
+            return new Promise(resolve => {
+                const allWonCards = [...wonTrickPiles['north-south'], ...wonTrickPiles['east-west']];
+                if (allWonCards.length === 0) {
+                    resolve();
+                    return;
+                }
+                const tl = gsap.timeline({ onComplete: resolve });
+                allWonCards.forEach((cardMesh, i) => {
+                    tl.to(cardMesh.position, {
+                        y: -10,
+                        duration: 0.5,
+                        delay: i * 0.01
+                    }, 0);
+                });
+            });
+        }
+
+        // --- Bot Logic ---
+        function handleBotTurn() {
+            const currentPlayer = gameData.players.find(p => p.position === gameData.currentTurn);
+            if (!currentPlayer || !currentPlayer.isBot) return;
+            
+            if (gameData.gameState === 'bidding') {
+                processBid('Pass', currentPlayer.position);
+            } else if (gameData.gameState === 'playing') {
+                const botHand = gameData.hands[currentPlayer.position];
+                if (botHand.length > 0) {
+                    const ledSuit = gameData.trick.length > 0 ? gameData.trick[0].card.suit : null;
+                    let cardToPlay = botHand.find(c => c.suit === ledSuit);
+                    if (!cardToPlay) {
+                        cardToPlay = botHand[0];
+                    }
+                    processPlayCard(cardToPlay, currentPlayer.position);
+                }
+            }
+        }
+
+        // --- UI Updates ---
+        function updateUI() {
+            if (!gameData.players) return;
+            gameData.players.forEach(p => {
+                const el = document.getElementById(`${p.position}-player`);
+                if (el) {
+                    let name = p.position.charAt(0).toUpperCase() + p.position.slice(1);
+                    if (p.isBot) name += ' (Bot)';
+                    if (p.position === localPlayerPosition) name += ' (You)';
+                    el.textContent = name;
+                }
+            });
+            switch(gameData.gameState) {
+                case 'bidding':
+                    statusText.textContent = `Bidding... Turn: ${gameData.currentTurn.toUpperCase()}`;
+                    biddingPanel.classList.toggle('hidden', gameData.currentTurn !== localPlayerPosition);
+                    break;
+                case 'playing':
+                    statusText.textContent = `Playing... Turn: ${gameData.currentTurn.toUpperCase()}`;
+                    if(gameData.contract) {
+                        const trumpSymbol = {S: '♠', H: '♥', D: '♦', C: '♣', NT: 'NT'}[gameData.contract.suit];
+                        document.getElementById('contract-text').textContent = `Contract: ${gameData.contract.level}${trumpSymbol} by ${gameData.declarer.toUpperCase()}`;
+                    }
+                    biddingPanel.classList.add('hidden');
+                    break;
+                case 'finished':
+                     statusText.textContent = "Round Over! Final Score:";
+                     biddingPanel.classList.add('hidden');
+                     nextRoundBtn.classList.remove('hidden');
+                     break;
+            }
+            bidsList.innerHTML = '';
+            gameData.bids.forEach(bid => {
+                const li = document.createElement('li');
+                li.textContent = `${bid.position.toUpperCase()}: ${bid.bid}`;
+                bidsList.appendChild(li);
+            });
+            bidsList.scrollTop = bidsList.scrollHeight;
+            northSouthScore.textContent = gameData.tricksWon ? gameData.tricksWon['north-south'] : 0;
+            eastWestScore.textContent = gameData.tricksWon ? gameData.tricksWon['east-west'] : 0;
+            updateLastTrickUI();
+        }
+
+        function updateLastTrickUI() {
+            if (!gameData.lastTrick || gameData.lastTrick.length === 0) {
+                lastTrickDisplay.classList.add('hidden');
+                return;
+            }
+            lastTrickDisplay.classList.remove('hidden');
+            lastTrickCards.innerHTML = '';
+            const suitSymbols = { 'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣' };
+            const suitColors = { 'S': 'text-black', 'H': 'text-red-500', 'D': 'text-orange-500', 'C': 'text-gray-500' };
+            
+            gameData.lastTrick.forEach(playedCard => {
+                const cardDiv = document.createElement('div');
+                cardDiv.className = `bg-white p-1 rounded text-center font-bold ${suitColors[playedCard.card.suit]}`;
+                cardDiv.innerHTML = `<span>${playedCard.card.rank}</span><span>${suitSymbols[playedCard.card.suit]}</span>`;
+                lastTrickCards.appendChild(cardDiv);
+            });
+        }
+
+        // --- 3D Scene Updates ---
+        function update3DScene(animate = true) {
+            const allPositions = ['south', 'west', 'north', 'east'];
+            let cardsInScene = new Set();
+
+            allPositions.forEach(position => {
+                const hand = gameData.hands[position];
+                if (!hand) return;
+
+                const isLocalPlayer = position === localPlayerPosition;
+                hand.forEach((cardData, i) => {
+                    const cardId = `${position}-${cardData.rank}${cardData.suit}`;
+                    cardsInScene.add(cardId);
+
+                    let cardMesh = cardObjects[cardId]?.mesh;
+                    if (!cardMesh) {
+                        cardMesh = createCardMesh(cardData, isLocalPlayer);
+                        cardObjects[cardId] = { mesh: cardMesh, data: cardData, faceMaterial: cardMesh.userData.faceMaterial };
+                    }
+                    
+                    if (animate && selectedObject !== cardMesh && !cardMesh.userData.isDealt) {
+                        const { pos, rot } = getCardTransform(position, i, hand.length);
+                        cardMesh.position.copy(pos);
+                        cardMesh.rotation.copy(rot);
+                        cardMesh.userData.isDealt = true;
+                    }
+                    if (!scene.children.includes(cardMesh)) scene.add(cardMesh);
+                });
+            });
+            
+            gameData.trick.forEach(playedCard => {
+                const cardId = `${playedCard.position}-${playedCard.card.rank}${playedCard.card.suit}`;
+                cardsInScene.add(cardId);
+                const cardMesh = cardObjects[cardId]?.mesh;
+                if (cardMesh) {
+                    gsap.to(cardMesh.position, { duration: 0.5, ...trickPilePositions[playedCard.position] });
+                    gsap.to(cardMesh.rotation, { duration: 0.5, x: 0, y: 0, z: 0 });
+                    gsap.to(cardMesh.scale, { duration: 0.5, x: 1.2, y: 1.2, z: 1.2 });
+                }
+            });
+
+            for (const partnership in wonTrickPiles) {
+                wonTrickPiles[partnership].forEach(cardMesh => {
+                    cardsInScene.add(cardMesh.userData.cardId);
+                });
+            }
+
+            for (const cardId in cardObjects) {
+                if (!cardsInScene.has(cardId)) {
+                    scene.remove(cardObjects[cardId].mesh);
+                    delete cardObjects[cardId];
+                }
+            }
+        }
+
+        function getCardTransform(position, index, handSize) {
+            const handWidth = 18; 
+            const handY = 2.8;    
+            const handZ = 6;      
+            const handTilt = -0.45;
+            const xPos = (index - (handSize - 1) / 2) * (handWidth / (handSize || 1));
+
+            switch(position) {
+                case 'south':
+                    return { pos: new THREE.Vector3(xPos, handY, handZ), rot: new THREE.Euler(handTilt, 0, 0) };
+                case 'north':
+                    return { pos: new THREE.Vector3(-xPos, handY, -handZ), rot: new THREE.Euler(handTilt, Math.PI, 0) };
+                case 'west':
+                    return { pos: new THREE.Vector3(-handZ, handY, xPos), rot: new THREE.Euler(handTilt, -Math.PI / 2, 0) };
+                case 'east':
+                    return { pos: new THREE.Vector3(handZ, handY, -xPos), rot: new THREE.Euler(handTilt, Math.PI / 2, 0) };
+            }
+        }
+        
+        function getCardFullName(cardData) {
+            const rankNames = { 'A': 'Ace', 'K': 'King', 'Q': 'Queen', 'J': 'Jack', 'T': 'Ten' };
+            const suitNames = { 'S': 'Spades', 'H': 'Hearts', 'D': 'Diamonds', 'C': 'Clubs' };
+            const rank = rankNames[cardData.rank] || cardData.rank;
+            const suit = suitNames[cardData.suit];
+            return `${rank} of ${suit}`;
+        }
+
+        function createCardMesh(cardData, isFaceUp = false) {
+            const cardWidth = 1.5;
+            const cardHeight = 2.1;
+            const geometry = new THREE.PlaneGeometry(cardWidth, cardHeight, 1, 1);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 150; canvas.height = 210;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 150, 210);
+            ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.strokeRect(2, 2, 146, 206);
+            const suitColors = { 'S': 'black', 'H': 'red', 'D': 'orange', 'C': 'black' };
+            const suitSymbols = { 'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣' };
+            ctx.fillStyle = suitColors[cardData.suit];
+            ctx.font = 'bold 32px Arial'; ctx.textAlign = 'center';
+            ctx.fillText(cardData.rank, 28, 40);
+            ctx.fillText(suitSymbols[cardData.suit], 28, 75);
+            ctx.scale(-1, -1);
+            ctx.fillText(cardData.rank, -122, -170);
+            ctx.fillText(suitSymbols[cardData.suit], -122, -135);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            const texture = new THREE.CanvasTexture(canvas);
+            const faceMaterial = new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide });
+            
+            const mesh = new THREE.Mesh(geometry, isFaceUp ? faceMaterial : cardBackMaterial);
+            mesh.castShadow = true;
+            mesh.userData = { cardData, fullName: getCardFullName(cardData), isFaceUp, faceMaterial, isDealt: false };
+            return mesh;
+        }
+
+        // --- Game Actions ---
+        function sortHand() {
+            gameData.hands[localPlayerPosition].sort((a, b) => {
+                const suitOrder = { 'S': 4, 'H': 3, 'D': 2, 'C': 1 };
+                const rankOrder = "23456789TJQKA";
+                if (suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[b.suit] - suitOrder[a.suit];
+                return rankOrder.indexOf(b.rank) - rankOrder.indexOf(a.rank);
+            });
+            update3DScene(true);
+        }
+
+        function handleBidSelection(level, suit) { currentBid.level = level; currentBid.suit = suit; }
+        function submitBid() {
+            if (!currentBid.level || !currentBid.suit) return;
+            processBid(`${currentBid.level}${currentBid.suit}`, localPlayerPosition);
+            currentBid = { level: null, suit: null };
+        }
+        function passBid() { processBid('Pass', localPlayerPosition); }
+
+        function processBid(bid, actingPlayerPosition) {
+            if (gameData.currentTurn !== actingPlayerPosition) return;
+            gameData.bids.push({ position: actingPlayerPosition, bid: bid });
+            const positions = ['south', 'west', 'north', 'east'];
+            const currentTurnIndex = positions.indexOf(gameData.currentTurn);
+            gameData.currentTurn = positions[(currentTurnIndex + 1) % 4];
+            const lastThreeBids = gameData.bids.slice(-3).map(b => b.bid);
+            const hasRealBid = gameData.bids.slice(0, -3).some(b => b.bid !== 'Pass');
+            if (gameData.bids.length >= 3 && lastThreeBids.every(b => b === 'Pass') && hasRealBid) {
+                determineContract();
+                gameData.gameState = 'playing';
+            }
+            updateUI();
+            if(gameData.gameState === 'bidding') handleBotTurn();
+            else if (gameData.gameState === 'playing') { update3DScene(); updateUI(); }
+        }
+        
+        function determineContract() {
+            const lastRealBid = [...gameData.bids].reverse().find(b => b.bid !== 'Pass');
+            if (!lastRealBid) return;
+            gameData.contract = { level: parseInt(lastRealBid.bid[0], 10), suit: lastRealBid.bid.substring(1) };
+            const partnership = ['north', 'south'].includes(lastRealBid.position) ? ['north', 'south'] : ['east', 'west'];
+            const firstBidderOfSuit = gameData.bids.find(b => partnership.includes(b.position) && b.bid.includes(gameData.contract.suit));
+            gameData.declarer = firstBidderOfSuit.position;
+            gameData.currentTurn = 'south'; // Player always leads
+        }
+
+        async function processPlayCard(card, actingPlayerPosition) {
+            if (gameData.currentTurn !== actingPlayerPosition) return;
+
+            const hand = gameData.hands[actingPlayerPosition];
+            const ledSuit = gameData.trick.length > 0 ? gameData.trick[0].card.suit : null;
+            
+            if (actingPlayerPosition === localPlayerPosition && ledSuit) {
+                const playerHasLedSuit = hand.some(c => c.suit === ledSuit);
+                if (playerHasLedSuit && card.suit !== ledSuit) {
+                    alert(`You must follow suit. Please play a ${ledSuit}.`);
+                    return;
+                }
+            }
+
+            const cardIndex = hand.findIndex(c => c.rank === card.rank && c.suit === card.suit);
+            if (cardIndex > -1) { hand.splice(cardIndex, 1); }
+            gameData.trick.push({ card, position: actingPlayerPosition });
+            
+            const cardId = `${actingPlayerPosition}-${card.rank}${card.suit}`;
+            const cardMesh = cardObjects[cardId]?.mesh;
+            if (cardMesh && !cardMesh.userData.isFaceUp) {
+                gsap.to(cardMesh.rotation, { 
+                    y: cardMesh.rotation.y + Math.PI, 
+                    duration: 0.5, 
+                    onComplete: () => {
+                        cardMesh.material = cardMesh.userData.faceMaterial;
+                        cardMesh.userData.isFaceUp = true;
+                    }
+                });
+            }
+
+            const positions = ['south', 'west', 'north', 'east'];
+            const currentTurnIndex = positions.indexOf(gameData.currentTurn);
+            gameData.currentTurn = positions[(currentTurnIndex + 1) % 4];
+            
+            updateUI();
+            update3DScene();
+            
+            if (gameData.trick.length < 4) {
+                await gsap.delayedCall(1.5, handleBotTurn);
+            } else {
+                await gsap.delayedCall(1.5, endTrick);
+            }
+        }
+
+        function endTrick() {
+            const trumpSuit = gameData.contract.suit;
+            const ledSuit = gameData.trick[0].card.suit;
+            const rankOrder = "23456789TJQKA";
+            
+            let winningCard = gameData.trick[0];
+
+            for (let i = 1; i < gameData.trick.length; i++) {
+                const currentCard = gameData.trick[i];
+                if (winningCard.card.suit === trumpSuit) {
+                    if (currentCard.card.suit === trumpSuit && rankOrder.indexOf(currentCard.card.rank) > rankOrder.indexOf(winningCard.card.rank)) {
+                        winningCard = currentCard;
+                    }
+                } else {
+                    if (currentCard.card.suit === trumpSuit) {
+                        winningCard = currentCard;
+                    } else if (currentCard.card.suit === ledSuit && rankOrder.indexOf(currentCard.card.rank) > rankOrder.indexOf(winningCard.card.rank)) {
+                        winningCard = currentCard;
+                    }
+                }
+            }
+
+            const winnerPos = winningCard.position;
+            const partnership = ['north', 'south'].includes(winnerPos) ? 'north-south' : 'east-west';
+            gameData.tricksWon[partnership]++;
+            
+            const winnerEl = document.getElementById(`${winnerPos}-player`);
+            gsap.to(winnerEl, { backgroundColor: '#4299e1', duration: 0.5, yoyo: true, repeat: 1 });
+            
+            const pilePosition = partnership === 'north-south' ? new THREE.Vector3(-5, 0.2 + gameData.tricksWon[partnership] * 0.05, -3) : new THREE.Vector3(5, 0.2 + gameData.tricksWon[partnership] * 0.05, -3);
+            
+            gameData.trick.forEach((playedCard, i) => {
+                const cardId = `${playedCard.position}-${playedCard.card.rank}${playedCard.card.suit}`;
+                const cardMesh = cardObjects[cardId]?.mesh;
+                if(cardMesh) {
+                    wonTrickPiles[partnership].push(cardMesh);
+                    gsap.to(cardMesh.position, { duration: 0.5, delay: 0.5, ...pilePosition, y: pilePosition.y + i * 0.02 });
+                    gsap.to(cardMesh.rotation, { duration: 0.5, delay: 0.5, x: Math.PI / 2, y: 0, z: 0 });
+                    gsap.to(cardMesh.scale, { duration: 0.5, delay: 0.5, x: 0.5, y: 0.5, z: 0.5 });
+                }
+            });
+
+            gameData.lastTrick = [...gameData.trick];
+            gameData.trick = [];
+            gameData.currentTurn = 'south'; // Player always leads
+            
+            if (gameData.hands.south.length === 0) {
+                gameData.gameState = 'finished';
+            }
+            
+            updateUI();
+        }
+
+        // --- Event Listeners ---
+        function setupUIListeners() {
+            singlePlayerBtn.addEventListener('click', createSinglePlayerGame);
+            sortBtn.addEventListener('click', sortHand);
+            zoomInBtn.addEventListener('click', () => { gsap.to(camera.position, { z: camera.position.z - 1, y: camera.position.y - 0.5, duration: 0.5 }); });
+            zoomOutBtn.addEventListener('click', () => { gsap.to(camera.position, { z: camera.position.z + 1, y: camera.position.y + 0.5, duration: 0.5 }); });
+            nextRoundBtn.addEventListener('click', createSinglePlayerGame);
+            newGameBtn.addEventListener('click', async () => {
+                await clearBoardAnimation();
+                gameModal.style.display = 'flex';
+                handControls.classList.add('hidden');
+                scoreDisplay.classList.add('hidden');
+                biddingPanel.classList.add('hidden');
+                lastTrickDisplay.classList.add('hidden');
+                statusText.textContent = 'Choose a Game Mode';
+                document.getElementById('contract-text').textContent = '';
+                northSouthScore.textContent = '0';
+                eastWestScore.textContent = '0';
+            });
+            rulesBtn.addEventListener('click', () => rulesModal.classList.remove('hidden'));
+            closeRulesBtn.addEventListener('click', () => rulesModal.classList.add('hidden'));
+            controlsBtn.addEventListener('click', () => controlsModal.classList.remove('hidden'));
+            closeControlsBtn.addEventListener('click', () => controlsModal.classList.add('hidden'));
+            toggleUiBtn.addEventListener('click', () => {
+                uiContainer.classList.toggle('hidden');
+                const isHidden = uiContainer.classList.contains('hidden');
+                toggleUiBtn.innerHTML = isHidden ? '&gt;' : '&lt;';
+                setTimeout(onWindowResize, 500); // Resize after transition
+            });
+            document.querySelectorAll('.bid-btn[data-bid-level]').forEach(btn => btn.addEventListener('click', () => handleBidSelection(btn.dataset.bidLevel, currentBid.suit)));
+            document.querySelectorAll('.bid-btn[data-bid-suit]').forEach(btn => btn.addEventListener('click', () => handleBidSelection(currentBid.level, btn.dataset.bidSuit)));
+            document.getElementById('submit-bid-btn').addEventListener('click', submitBid);
+            document.getElementById('pass-btn').addEventListener('click', passBid);
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            renderer.domElement.addEventListener('pointermove', onPointerMove);
+            renderer.domElement.addEventListener('pointerup', onPointerUp);
+        }
+
+        function getIntersect(event) {
+            raycaster.setFromCamera(getMouseVector(event), camera);
+            return raycaster.intersectObjects(Object.values(cardObjects).map(c => c.mesh));
+        }
+
+        function onPointerDown(event) {
+            const intersects = getIntersect(event);
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                if (gameData.hands[localPlayerPosition].some(c => c.rank === object.userData.cardData.rank && c.suit === object.userData.cardData.suit)) {
+                    selectedObject = object;
+                    dragStartTime = Date.now();
+                }
+            }
+        }
+
+        function onPointerMove(event) {
+            const mouseVector = getMouseVector(event);
+            
+            raycaster.setFromCamera(mouseVector, camera);
+            const playerCardMeshes = gameData.hands[localPlayerPosition].map(c => cardObjects[`${localPlayerPosition}-${c.rank}${c.suit}`]?.mesh).filter(Boolean);
+            const intersects = raycaster.intersectObjects(playerCardMeshes);
+
+            if (intersects.length > 0) {
+                if (hoveredObject !== intersects[0].object) {
+                    hoveredObject = intersects[0].object;
+                    cardTooltip.style.display = 'block';
+                    cardTooltip.textContent = hoveredObject.userData.fullName;
+                }
+                cardTooltip.style.left = `${event.clientX + 15}px`;
+                cardTooltip.style.top = `${event.clientY}px`;
+            } else {
+                hoveredObject = null;
+                cardTooltip.style.display = 'none';
+            }
+
+            if (selectedObject && !isDragging && (Date.now() - dragStartTime > 150)) {
+                isDragging = true;
+                sceneContainer.classList.add('grabbing');
+                gsap.to(selectedObject.position, { y: selectedObject.position.y + 0.5, duration: 0.2 });
+            }
+
+            if (isDragging) {
+                const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -selectedObject.position.z);
+                raycaster.setFromCamera(mouseVector, camera);
+                const intersectPoint = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+                if (intersectPoint) {
+                    selectedObject.position.x = intersectPoint.x;
+                }
+            }
+        }
+
+        function onPointerUp(event) {
+            const dragDuration = Date.now() - dragStartTime;
+
+            if (isDragging) { // End of a drag
+                const hand = gameData.hands[localPlayerPosition];
+                const draggedCardData = selectedObject.userData.cardData;
+                
+                const originalIndex = hand.findIndex(c => c.rank === draggedCardData.rank && c.suit === draggedCardData.suit);
+                if (originalIndex > -1) hand.splice(originalIndex, 1);
+
+                const finalX = selectedObject.position.x;
+                let newIndex = hand.length; 
+                for (let i = 0; i < hand.length; i++) {
+                    const cardId = `${localPlayerPosition}-${hand[i].rank}${hand[i].suit}`;
+                    const cardMesh = cardObjects[cardId]?.mesh;
+                    if (cardMesh && finalX < cardMesh.position.x) {
+                        newIndex = i;
+                        break;
+                    }
+                }
+                hand.splice(newIndex, 0, draggedCardData);
+                update3DScene(true);
+
+            } else if (selectedObject && dragDuration < 200) { // A quick click
+                if (gameData.gameState === 'playing' && gameData.currentTurn === localPlayerPosition) {
+                    processPlayCard(selectedObject.userData.cardData, localPlayerPosition);
+                }
+            }
+
+            sceneContainer.classList.remove('grabbing');
+            selectedObject = null;
+            isDragging = false;
+        }
+
+        function getMouseVector(event) {
+            const mouse = new THREE.Vector2();
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            return mouse;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
