@@ -129,4 +129,4 @@ This is where it becomes a true social platform. Integrating voice and video is 
 
 This roadmap gives us a clear path from where we are now to a full-featured social Bridge application. We can tackle it one phase at a time, starting with the critical multiplayer foundation.
 
-current index.html v.1.0
+[current index.html v.1.0](https://pdragonlabs.github.io/3D-Bridge-App/)
