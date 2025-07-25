@@ -2,7 +2,7 @@
 single and multi social app
 
 
-!A[image](./3D-Bridge-Game-(Offline).png)
+![image](./3D-Bridge-Game-(Offline).png)
 
 
 in progress
